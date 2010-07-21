@@ -33,10 +33,6 @@ from xml.dom import minidom
 #helper modules
 import consts
 
-# 
-# All my works on that library I dedicate for Hania B. :*
-# 
-
 __all__ = ['IRCProtocol', 'CamProtocol']
 
 logger = logging.getLogger('OnetCzat.Connection')
@@ -223,6 +219,12 @@ class OnetAuth(object):
         else:
             onet_cid_result = None
 
+        #onet_sgn_match = re.search("onet_sgn=(.*?);", onet_sgn_cookie)
+        #if onet_sgn_match:
+        #    onet_sgn_result = onet_sgn_match.group()
+        #else:
+        #    onet_sgn_result = None
+
         if onet_ubi_result != None and onetzuo_ticket_result != None and onet_cid_result != None:
             finished = Deferred()
             response.deliverBody(BeginningPrinter(finished))
@@ -297,9 +299,12 @@ class OnetAuth(object):
             self.postAuth(cookie, True)
 
     def postLoginInfo(self, result, cookie):
+        #print 'postLoginInfo()'
         self.postAuth(cookie, False)
 
     def postAuth(self, cookie, anonymous=True):
+        #print 'cookie: ', cookie
+        #print 'postAuth(%s)' % (anonymous)
         nickname = self.nickname
         if anonymous != True:
             postvars = "api_function=getUoKey&params=a:3:{s:4:\"nick\";s:%d:\"%s\";s:8:\"tempNick\";i:0;s:7:\"version\";s:22:\"1.0(20090306-1441 - R)\";}" % (len(nickname), nickname)
@@ -315,6 +320,7 @@ class OnetAuth(object):
         headers['Connection'] = ['close']
         headers['User-Agent'] = ['Mozilla/4.0 (FreeBSD) Java-brak ;)']
         headers['Accept'] = ['text/html, image/gif, image/jpeg, *; q=.2, */*; q=.2']
+        #headers['Content-Length'] = [body.length]
         headers['Content-Type'] = ['application/x-www-form-urlencoded']
         headers['Cookie'] = [cookie]
         headers = Headers(headers)
@@ -329,6 +335,7 @@ class OnetAuth(object):
         d.addErrback(self.cbShutdown)
 
     def cbPostAuth(self, response, cookie):
+        #print 'cbPostAuth()'
         finished = Deferred()
         response.deliverBody(BeginningPrinter(finished))
         finished.addCallback(self.cbPostAuthSuccess, cookie)
@@ -336,9 +343,11 @@ class OnetAuth(object):
         return finished
 
     def cbPostAuthSuccess(self, result, cookie):
+        #print 'cbPostAuthSuccess()'
         result = result.decode('ISO-8859-2').encode('UTF-8')
 
         xml_root = minidom.parseString(result)
+        #print xml_root.firstChild.toxml()
         try:
             bool(xml_root.getElementsByTagName('error')[0].attributes['err_code'].value)
             uokey = xml_root.getElementsByTagName('uoKey')[0].firstChild.data
@@ -351,6 +360,7 @@ class OnetAuth(object):
 
 
     def cbShutdown(self, ignored):
+        #reactor.stop()
         logger.info("Something went wrong.")
         logger.info('cbShutdown: ', ignored)
 
@@ -397,6 +407,7 @@ class AvatarFetcher(object):
         pass
 
     def cbShutdown(self, ignored):
+        #reactor.stop()
         logger.info("Something went wrong.")
         logger.info('cbShutdown: ', ignored)
 
@@ -420,12 +431,14 @@ class IRCProtocol(basic.LineReceiver):
         self.auth.onAuthorised = self.onAuthorised
         self.auth.authorise()
 
-        logger.info("Connected to Onet Czat at %s." %
+        print ("[connected at %s]" %
                         time.asctime(time.localtime(time.time())))
 
     def onAuthorised(self, nickname, password, uokey):
+        #print 'onAuthorised', nickname
         self.uokey = uokey
-        logger.info("Authorised to Onet Czat at %s." %
+        print uokey
+        print ("[authorised at %s]" %
                         time.asctime(time.localtime(time.time())))
         self.register()
 
@@ -442,7 +455,7 @@ class IRCProtocol(basic.LineReceiver):
 
     def lineReceived(self, line):
         line = line.decode('ISO-8859-2').encode('UTF-8')
-        #print "[recv]:", line
+        logger.debug("[recv]: %s" % (line))
 
         part = line.split(' ', 4)
         if part[0].startswith(':'):
@@ -452,7 +465,7 @@ class IRCProtocol(basic.LineReceiver):
             if part[0] == self.serv_id:
                 if part[1] in consts.numeric_to_symbolic:
                     packet_id = consts.numeric_to_symbolic[part[1]]
-                    #print "[recv packet]:", packet_id
+                    print "[recv packet]:", packet_id
                     if packet_id == 'ONETAUTHKEY':
                         self.authkey = part[3][1:]
                         self.onAuthKeyRecv()
@@ -465,12 +478,14 @@ class IRCProtocol(basic.LineReceiver):
                         self.room_list += part[3][1:]+','
                     elif packet_id == 'RPL_ROOMLIST_END':
                         self.room_list = self.room_list
+                        self.user_profile.onRoomsRecv(self.room_list)
                     elif packet_id == 'RPL_TOPIC':
                         room_id = part[3]
                         topic = part[4][1:]
                         self.user_profile.onTopicRecv(room_id, topic)
                     elif packet_id == 'RPL_NAMREPLY':
-                        #napisac obsluge wiekszej ilosci ludzi w pokoju, yay!
+                        print part
+                        print part[4]
                         room_id, nicks = part[4].split(' :', 2)
                         try:
                             self.nicks[str(room_id)] = str(self.nicks[str(room_id)]+' '+nicks)
@@ -572,21 +587,12 @@ class IRCProtocol(basic.LineReceiver):
                     else:
                         pass
 
-        elif part[1] == 'INVITE':
-            who = part[0]
-            who = who[who.find(':')+1:who.find('!')]
-            
-            nick = part[2]
-            room_id = part[3]
-            room_id = room_id[1:]
-            
-            self.user_profile.userInviteRecv(room_id, who, nick)
-            
+
         elif part[0] == 'PING':
             self.sendPong()
 
     def sendData(self, line):
-        #print '[send] '+line
+        logger.debug("[send]: %s" % (line))
         self.sendLine(str(line+"\n\r").encode('ISO-8859-2'))
 
     def register(self):
@@ -628,14 +634,18 @@ class CamProtocol(Protocol):
         self.uokey = uokey
         
         self.packet_id = None
-        self.packet_info = None
-        self.buffer = ''
-        self.tlen = 0
+        self.__buffer = ''
+        #self.nicks = ['szczupla40']
         self.applet_ver = '3.1(applet)'
 
-        self.img_id = 0
+        self.__packet_id = None
+        self.__packet_data_len = 0
+        self.__packet_nick = None
+        self.__getting_data = False
+        
+        self.__img_id = 0
 
-        self.loop = None
+        self.loops = {}
 
         self.loginSuccess = Deferred()
         self.loginSuccess.addCallback(self.conn._loginSuccess)
@@ -646,6 +656,7 @@ class CamProtocol(Protocol):
                         time.asctime(time.localtime(time.time())))
 
     def onAuthorised(self, nickname, password, uokey):
+        #print 'onAuthorised', nickname
         print ("[authorised at %s]" %
                         time.asctime(time.localtime(time.time())))
 
@@ -655,149 +666,230 @@ class CamProtocol(Protocol):
     def connectionLost(self, reason):
         print reason
 
-    def packetHandler(self, pid, data):
-        handle_method_name = 'handle_%s' % pid
-        handle_method = getattr(self, handle_method_name)
-        if handle_method:
-            try:
-                handle_method(data)
-            except Exception, e:
-                print 'Failed to call %s: ' % handle_method_name, e
-        else:
-            print 'Unhandled method: ', message.method
 
     def dataReceived(self, data):
-        self.buffer += data
+        self.__buffer += data
+        
+        #hackyyy
+        if self.__getting_data == False:
+            if self.__buffer:
+                packet_id = self.__buffer[:3]
 
-        while True:
-            if self.packet_info is not None:
-                if int(self.packet_info['length']) == 0:
-                    try:
-                        data = self.buffer[:self.buffer.index('\n')]
+                if packet_id == '268':
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
 
-                        print "packet: %s" % (self.packet_info['pid'])
-                        print "data:\n%s\n" % (data)
-                        self.packetHandler(self.packet_info['pid'], data)
+                    auth = 'AUTH %s %s' % (self.uokey, self.applet_ver)
+                    self.sendData(auth)
 
-                        #at the end we cutting off parsed bytes, simply!
-                        dlen = len(data)+1
-                        self.buffer = self.buffer[dlen:]
-                        
-                        self.packet_info = None
-                    except:
-                        break
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == '231' or packet_id == '232' or packet_id == '233' or packet_id == '200':
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
+
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == '264':
+                    #dont know what it is but looks useful :P
+                    #264 0 CODE_ACCEPTED ffffffff 2147483647
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
+
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == '250':
+                    print 'ok, lets have fun fun fun :P'
+
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+
+                    packet_data_len = len(packet_data)+1
+
+                    self.__buffer = self.__buffer[packet_data_len:]
+
+                    part = packet_data.split(' ', 3)
+                    bytestoget = part[1]
+
+                    self.__packet_id = 250
+                    self.__packet_data_len = int(bytestoget)
+                    self.__getting_data = True
+                elif packet_id == '251':
+                    packet_header_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_header_data
+
+                    part = packet_header_data.split(' ', 3)
+                    
+                    #FIXME: this should be fetched like 250 packet!
+
+                    packet_header_data_len = len(packet_header_data)+1
+
+                    self.__buffer = self.__buffer[packet_header_data_len:]
+
+                    packet_data = self.__buffer[:int(part[1])]
+                    print packet_data
+                    packet_data_len = len(packet_data)
+
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == '252' or packet_id == '253':
+                    #252 0 USER_STATUS szczupla40
+                    #253 0 USER_VOTES szczupla40 0
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
+
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == '254':
+                    #254 1854 USER_COUNT_UPDATE
+                    packet_header_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_header_data
+                    packet_header_data_len = len(packet_header_data)+1
+
+                    self.__buffer = self.__buffer[packet_header_data_len:]
+
+                    part = packet_header_data.split(' ', 3)
+                    bytestoget = part[1]
+
+                    self.__packet_id = int(packet_id)
+                    self.__packet_data_len = int(bytestoget)
+                    self.__getting_data = True
+                elif packet_id == '202':
+                    packet_header_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_header_data
+                    packet_header_data_len = len(packet_header_data)+1
+
+                    self.__buffer = self.__buffer[packet_header_data_len:]
+
+                    part = packet_header_data.split(' ', 4)
+                    bytestoget = part[1]
+
+                    self.__packet_id = int(packet_id)
+                    self.__packet_data_len = int(bytestoget)
+                    self.__packet_nick = str(part[3])
+                    self.__getting_data = True
+                elif packet_id == '412':
+                    #412 0 SUBSCRIBE_FAILED olgusia32
+                    #wustepuje jak przylaczymy sie do zbut wielu kamerek
+
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
+
+                    part = packet_data.split(' ', 4)
+                    nick = part[3]
+
+                    #self.conn.onSubscribeDenied(nick)
+
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == '413':
+                    #413 0 SUBSCRIBE_DENIED aliina
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
+                    
+                    part = packet_data.split(' ', 4)
+                    nick = part[3]
+                    
+                    self.conn.onSubscribeDenied(nick)
+                    
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == '408':
+                    #408 0 NO_SUCH_USER_SUBSCRIBE LenCia
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
+                    
+                    part = packet_data.split(' ', 4)
+                    nick = part[3]
+                    
+                    self.conn.onNoSuchUser(nick)
+                    
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == '405':    
+                    #405 0 USER_GONE Restonka
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
+                    
+                    part = packet_data.split(' ', 4)
+                    nick = part[3]
+                    
+                    self.conn.onUserGone(nick)
+                    
+                    self.__buffer = self.__buffer[packet_data_len:]
+                elif packet_id == 'SET':
+                    #well hacky but works ;)
+                    packet_data = self.__buffer[:self.__buffer.index('\n')]
+                    print packet_data
+                    packet_data_len = len(packet_data)+1
+                    
+                    self.__buffer = self.__buffer[packet_data_len:]
                 else:
-                    #tlen = (9+len(self.packet_info['length'])+int(self.packet_info['length']))
-                    tlen = len(self.buffer[:self.buffer.index('\r\n')])+2+int(self.packet_info['length'])
-                    #print int(self.packet_info['length'])
-                    #print "%s vs %s" % (tlen, len(self.buffer))
-                    if len(self.buffer) >= tlen:
-                        print 'ook:\n', repr(self.buffer[:tlen])
-                        tmp = self.buffer[:tlen]
-                        data = tmp[len(self.buffer[:self.buffer.index('\r\n')])+2:]
+                    print 'Unknown packet:', repr(packet_id)
+                    print 'Captured data:', self.__buffer[:64]
+        else:
+            buffer_len = len(self.__buffer)
+            if buffer_len > self.__packet_data_len:
+                print 'success!'
+                print buffer_len
 
-                        print "packet: %s" % (self.packet_info['pid'])
-                        print "data:\n%s\n" % (data)
-                        self.packetHandler(self.packet_info['pid'], data)
+                packet_data = self.__buffer[:self.__packet_data_len]
 
-                        self.buffer = self.buffer[tlen:]
-                        self.packet_info = None
-                    else:
-                        break
+                self.parseData(self.__packet_id, self.__packet_nick, packet_data)
+
+                self.__buffer = self.__buffer[self.__packet_data_len:]
+
+                self.__packet_id = None
+                self.__packet_data_len = 0
+                self.__getting_data = False
+                self.__packet_nick = None
             else:
-                if len(self.buffer) >= 10:
-                    tmp = self.buffer[:10]
-                    #print 'tmp: ', tmp
-                    pid, length, crap = tmp.split(' ', 2)
-                    if len(self.buffer) >= (6+len(length)+int(length)):
-                        self.packet_info = {}
-                        self.packet_info['pid'] = pid
-                        self.packet_info['length'] = length
-                    else:
-                        break
-                else:
-                    break
+                pass
+
+    def parseData(self, id, nick, data):
+        if id == 250:
+            self.loginSuccess.callback(self)
+            self.conn.onUserList(data)
+        elif id == 254:
+            self.conn.onUserCountUpdate(data)
+        elif id == 202:
+            self.conn.onImgRecv(nick, data)
+            self.__img_id += 1
+            #logfile = open('imgs/%s_%s.jpg' % (nick, self.__img_id), 'w')
+            #logfile.write(data)
+            #logfile.close()
+            
+            #self.keepAliving(nick)
+
+        #print id, data
 
     def keepAliving(self, nick):
+        #FIXME: should be replaced by task loop
         self.sendData('KEEPALIVE_BIG %s' % (nick))
+        #reactor.callLater(5.0, self.keepAliving, nick)
 
     def startPing(self, nick):
-        self.loop = task.LoopingCall(self.keepAliving, nick)
-        self.loop.start(5.0)
+        self.loops[nick] = task.LoopingCall(self.keepAliving, nick)
+        self.loops[nick].start(1.0)
 
     def stopPing(self, nick):
-        if self.loop:
-            self.loop.stop()
+        self.loops[nick].stop()
 
     def sendData(self, line):
-        print '[send]:', line.encode('ISO-8859-2')
+        print '[send] '+repr(line.encode('ISO-8859-2'))
+        #self.sendLine(str(line).encode('ISO-8859-2'))
         self.transport.write(str(line+"\n\r").encode('ISO-8859-2'))
 
-    def recvLine(self, line):
-        print '[recv]:', line.decode('ISO-8859-2').encode('UTF-8')
+    #
+    # High-level interface callbacks
+    #
 
-    # Packed handling function
-    
-    def handle_268(self, data):
-        auth = 'AUTH %s %s' % (self.uokey, self.applet_ver)
-        self.sendData(auth)
+    def _warn(self, obj):
+        tlog.warning( str(obj) )
 
-    def handle_231(self, data):
-        pass
+    def _log(self, obj):
+        tlog.msg( str(obj) )
 
-    def handle_232(self, data):
-        pass
-
-    def handle_233(self, data):
-        pass
-
-    def handle_200(self, data):
-        pass
-
-    def handle_264(self, data):
-        pass
-
-    def handle_412(self, data):
-        pass
-
-    def handle_413(self, data):
-        part = data.split(' ', 4)
-        nick = part[3]
-
-        self.conn.onSubscribeDenied(nick)
-
-    def handle_408(self, data):
-        part = data.split(' ', 4)
-        nick = part[3]
-
-        self.conn.onNoSuchUser(nick)
-
-    def handle_405(self, data):
-        part = data.split(' ', 4)
-        nick = part[3]
-
-        self.conn.onUserGone(data)
-
-    def handle_252(self, data):
-        pass
-
-    def handle_253(self, data):
-        pass
-
-    def handle_413(self, data):
-        pass
-
-    def handle_250(self, data):
-        self.loginSuccess.callback(self)
-        self.conn.onUserList(data)
-        
-    def handle_251(self, data):
-        print "251 data:", repr(data)
-
-    def handle_254(self, data):
-        self.conn.onUserCountUpdate(data)
-
-    def handle_202(self, data):
-        self.conn.onImgRecv('aa', data)
-        self.img_id += 1
-
+    def _log_failure(self, failure, *args, **kwargs):
+        print "Failure:"
+        failure.printTraceback()

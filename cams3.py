@@ -76,61 +76,16 @@ class CamClientFactory(protocol.ClientFactory):
         #    reactor.stop()
         print reason
 
-
-class AuthDialog(object):
-    def responseToDialog(self, entry, dialog, response):
-        dialog.response(response)
-        print 'responseToDialog'
-    def getText(self):
-        #base this on a message dialog
-        dialog = gtk.MessageDialog(
-            None,
-            gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT,
-            gtk.MESSAGE_QUESTION,
-            gtk.BUTTONS_OK,
-            None)
-        dialog.set_markup('Please enter your <b>Onet Czat</b> login info:')
-        #create the text input field
-        entry = gtk.Entry()
-        #allow the user to press enter to do ok
-        entry.connect("activate", self.responseToDialog, dialog, gtk.RESPONSE_OK)
-
-        entry2 = gtk.Entry()
-        #allow the user to press enter to do ok
-        entry2.connect("activate", self.responseToDialog, dialog, gtk.RESPONSE_OK)
-        #create a horizontal box to pack the entry and a label
-        hbox = gtk.HBox()
-        hbox.pack_start(gtk.Label("Login:"), False, 5, 5)
-        hbox.pack_end(entry)
-        hbox2 = gtk.HBox()
-        hbox2.pack_start(gtk.Label("Password:"), False, 5, 5)
-        hbox2.pack_end(entry2)
-        #some secondary text
-        dialog.format_secondary_markup("")
-        #add it and show it
-        dialog.vbox.pack_start(hbox, True, True, 0)
-        dialog.vbox.pack_start(hbox2, True, True, 0)
-        dialog.show_all()
-        #go go go
-        dialog.run()
-        text = entry.get_text()
-        text2 = entry2.get_text()
-        dialog.destroy()
-        CameraWindow(None, text, text2)
-        print text
-        return text
-
-
-class CameraWindow(gtk.Window):
-    pixbuf_loader = None
+class ImagesDemo(gtk.Window):
+    pixbuf_loader = None 
     load_timeout = None
     image_stream = None
 
-    def __init__(self, parent=None, user=None, password=None):
+    def __init__(self, parent=None):
         gtk.Window.__init__(self)
 	
-	self.account=user
-	self.password=password
+	self.account='login'
+	self.password='password'
 	
 	self.profile = IRCProfile(self.account, self.password)
 	self.profile.onLoginSuccess = self.onLoginSuccess
@@ -161,10 +116,10 @@ class CameraWindow(gtk.Window):
 
         vbox = gtk.VBox(False, 8)
         vbox.set_border_width(8)
-        self.add(vbox)
+        #self.add(vbox)
 
         self.label = gtk.Label();
-        self.label.set_markup("<u>Logging in</u>")
+        self.label.set_markup("Logging in")
         vbox.pack_start(self.label, False, False, 0)
 
         frame = gtk.Frame()
@@ -175,56 +130,41 @@ class CameraWindow(gtk.Window):
         align = gtk.Alignment(0.5, 0.5, 0, 0)
         align.add(frame)
         vbox.pack_start(align, False, False, 0)
-
-        # Create an empty image for now; the progressive loader
-        # will create the pixbuf and fill it in.
-	#img = open('aa.jpg')
-	#data = img.read()
-	#img.close()
-	#loader = gtk.gdk.PixbufLoader("jpeg")
-	#loader.write(data)
-	#loader.close()
-	#pixbuf = loader.get_pixbuf()
-	
+        
         self.image = gtk.Image()
         self.image.set_from_pixbuf(None)
         frame.add(self.image)
+        
+        hpaned = gtk.HPaned()
+        hpaned.add1(vbox)
 
-        self.liststore = gtk.ListStore(int, int, str)
-        self.tree = gtk.TreeView(model=self.liststore)
-        self.tree.connect("row-activated", self.nickClicked, None)
+        vbox2 = gtk.VBox(False, 8)
+        vbox2.set_border_width(8)
 
-        column_w = gtk.TreeViewColumn('Watchers')
-        column_w.set_clickable(True)
-        column_w.set_sort_column_id(0)
-        column_w.set_resizable(True)
+        slider = gtk.VScale()
+        slider.set_inverted(True)
+        slider.set_range(0, 100)
+        slider.set_increments(1, 10)
+        slider.set_digits(0)
+        slider.set_size_request(34, 160)
+        slider.set_value_pos(gtk.POS_BOTTOM)
+        slider.set_value(5)
 
+        # Events
+        slider.connect('value-changed', self.updateRefreshFrequency)
+        
+        vbox2.pack_start(slider, False, False, 0)
 
-        column_u = gtk.TreeViewColumn('Unknown')
-        column_n = gtk.TreeViewColumn('Nick')
+        button = gtk.Button("Quit")
+        button.connect_object("clicked", gtk.mainquit, self)
+        button.set_flags(gtk.CAN_DEFAULT)
+        button.grab_default()
 
-        self.tree.append_column(column_w)
-        self.tree.append_column(column_u)
-        self.tree.append_column(column_n)
-
-        cell_w = gtk.CellRendererText()
-        cell_u = gtk.CellRendererText()
-        cell_n = gtk.CellRendererText()
-
-        column_w.pack_start(cell_w)
-        column_u.pack_start(cell_u)
-        column_n.pack_start(cell_n)
-
-        column_w.add_attribute(cell_w, 'text', 0)
-        column_u.add_attribute(cell_u, 'text', 1)
-        column_n.add_attribute(cell_n, 'text', 2)
-
-        sw = gtk.ScrolledWindow()
-        sw.add(self.tree)
-        vbox.add(sw)
+        vbox2.pack_start(button, False, False, 0)
+        hpaned.add2(vbox2)
 
         # Sensitivity control
-
+        self.add(hpaned)
         self.show_all()
 
     def onLoginSuccess(self):
@@ -257,16 +197,25 @@ class CameraWindow(gtk.Window):
 
     def onUserList(self, data):
         pass
-        
+        #print data
+
     def onUserCountUpdate(self, data):
         data = data.split('\n')
         self.liststore.clear()
         for user in data:
             try:
                 nick, watchers, unknown = user.split(' ')
+                #print 'a:', user.split(' ')
+                #print nick
                 self.liststore.append([int(watchers), int(unknown), str(nick)])
             except:
                 print 'Not possible for data: ', user
+
+    def updateRefreshFrequency(self, widget):
+
+        val = widget.get_value()
+
+        print val
 
 
     def nickClicked(self, treeview, iter, tvc, foo):
@@ -295,6 +244,10 @@ class CameraWindow(gtk.Window):
 	self.image.set_from_pixbuf(pixbuf)
 
     def cleanup_callback(self, win):
+#        if self.load_timeout != 0:
+#            gtk.timeout_remove(self.load_timeout)
+#            self.load_timeout = 0
+
         if self.pixbuf_loader is not None:
             self.pixbuf_loader.close()
             self.pixbuf_loader = None
@@ -311,9 +264,7 @@ class CameraWindow(gtk.Window):
 
 
 def main():
-    auth = AuthDialog()
-    auth.getText()
-    #ImagesDemo()
+    ImagesDemo()
     #gtk.main()
     reactor.run()
 

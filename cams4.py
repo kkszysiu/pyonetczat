@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-from twisted.internet import gtk2reactor # for gtk-2.0
-gtk2reactor.install()
+import gtk3reactor # for gtk-3.0
+gtk3reactor.install()
 
 from twisted.internet import reactor, protocol
 from twisted.web.client import getPage
@@ -14,8 +14,8 @@ from onetczat_client import IRCProfile, CamProfile
 
 import os
 import sys
-import gobject
-import gtk
+from gi.repository import GObject as gobject
+from gi.repository import Gtk as gtk
 
 __all__ = ['OnetCzatConnection']
 
@@ -63,74 +63,24 @@ class CamClientFactory(protocol.ClientFactory):
 
     def clientConnectionLost(self, connector, reason):
         logger.info('Lost connection.  Reason: %s' % (reason))
-        #protocol.ReconnectingClientFactory.clientConnectionLost(self, connector, reason)
-        #connector.connect()
-        #if reactor.running:
-        #    reactor.stop()
         print reason
 
     def clientConnectionFailed(self, connector, reason):
         logger.info('Connection failed. Reason: %s' % (reason))
-        #protocol.ReconnectingClientFactory.clientConnectionFailed(self, connector, reason)
-        #if reactor.running:
-        #    reactor.stop()
         print reason
 
-
-class AuthDialog(object):
-    def responseToDialog(self, entry, dialog, response):
-        dialog.response(response)
-        print 'responseToDialog'
-    def getText(self):
-        #base this on a message dialog
-        dialog = gtk.MessageDialog(
-            None,
-            gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT,
-            gtk.MESSAGE_QUESTION,
-            gtk.BUTTONS_OK,
-            None)
-        dialog.set_markup('Please enter your <b>Onet Czat</b> login info:')
-        #create the text input field
-        entry = gtk.Entry()
-        #allow the user to press enter to do ok
-        entry.connect("activate", self.responseToDialog, dialog, gtk.RESPONSE_OK)
-
-        entry2 = gtk.Entry()
-        #allow the user to press enter to do ok
-        entry2.connect("activate", self.responseToDialog, dialog, gtk.RESPONSE_OK)
-        #create a horizontal box to pack the entry and a label
-        hbox = gtk.HBox()
-        hbox.pack_start(gtk.Label("Login:"), False, 5, 5)
-        hbox.pack_end(entry)
-        hbox2 = gtk.HBox()
-        hbox2.pack_start(gtk.Label("Password:"), False, 5, 5)
-        hbox2.pack_end(entry2)
-        #some secondary text
-        dialog.format_secondary_markup("")
-        #add it and show it
-        dialog.vbox.pack_start(hbox, True, True, 0)
-        dialog.vbox.pack_start(hbox2, True, True, 0)
-        dialog.show_all()
-        #go go go
-        dialog.run()
-        text = entry.get_text()
-        text2 = entry2.get_text()
-        dialog.destroy()
-        CameraWindow(None, text, text2)
-        print text
-        return text
-
-
-class CameraWindow(gtk.Window):
-    pixbuf_loader = None
+class InitialiseWebCamWindow(object):
+    pixbuf_loader = None 
     load_timeout = None
     image_stream = None
 
-    def __init__(self, parent=None, user=None, password=None):
-        gtk.Window.__init__(self)
-	
-	self.account=user
-	self.password=password
+    def __init__(self, nick):
+        self.window = gtk.Window()
+
+        self.nick = nick
+
+	self.account='login'
+	self.password='password'
 	
 	self.profile = IRCProfile(self.account, self.password)
 	self.profile.onLoginSuccess = self.onLoginSuccess
@@ -150,82 +100,59 @@ class CameraWindow(gtk.Window):
 	factory = IRCClientFactory(self.profile)
 	reactor.connectTCP('213.180.130.192', 5015, factory)
 	
-        try:
-            self.set_screen(parent.get_screen())
-        except AttributeError:
-            self.connect('destroy', lambda *w: gtk.main_quit())
-        self.connect("destroy", self.cleanup_callback)
-        self.set_title("OnetCzat Kamerki")
-        self.set_default_size(400, 400)
-        self.set_border_width(8)
+        self.window.connect("destroy", self.cleanup_callback)
+        self.window.set_title("OnetCzat Kamerka - %s" % (nick))
+        self.window.set_default_size(400, 260)
+        self.window.set_border_width(8)
 
-        vbox = gtk.VBox(False, 8)
+        vbox = gtk.VBox()
         vbox.set_border_width(8)
-        self.add(vbox)
 
-        self.label = gtk.Label();
-        self.label.set_markup("<u>Logging in</u>")
+        self.label = gtk.Label()
+        self.label.set_padding(2, 2)
+        self.label.set_markup("Logging in into WebCams")
         vbox.pack_start(self.label, False, False, 0)
 
         frame = gtk.Frame()
-        frame.set_shadow_type(gtk.SHADOW_IN)
 
-        # The alignment keeps the frame from growing when users resize
-        # the window
-        align = gtk.Alignment(0.5, 0.5, 0, 0)
+        align = gtk.Alignment()
         align.add(frame)
         vbox.pack_start(align, False, False, 0)
-
-        # Create an empty image for now; the progressive loader
-        # will create the pixbuf and fill it in.
-	#img = open('aa.jpg')
-	#data = img.read()
-	#img.close()
-	#loader = gtk.gdk.PixbufLoader("jpeg")
-	#loader.write(data)
-	#loader.close()
-	#pixbuf = loader.get_pixbuf()
-	
+        
         self.image = gtk.Image()
+        self.image.set_size_request(320, 240)
         self.image.set_from_pixbuf(None)
         frame.add(self.image)
+        
+        hpaned = gtk.HPaned()
+        hpaned.add1(vbox)
 
-        self.liststore = gtk.ListStore(int, int, str)
-        self.tree = gtk.TreeView(model=self.liststore)
-        self.tree.connect("row-activated", self.nickClicked, None)
+        vbox2 = gtk.VBox()
+        vbox2.set_border_width(10)
 
-        column_w = gtk.TreeViewColumn('Watchers')
-        column_w.set_clickable(True)
-        column_w.set_sort_column_id(0)
-        column_w.set_resizable(True)
+        slider = gtk.VScale()
+        slider.set_inverted(True)
+        slider.set_range(0, 30)
+        slider.set_increments(1, 10)
+        slider.set_digits(0)
+        slider.set_size_request(34, 160)
+        slider.set_value(5)
 
+        # Events
+        slider.connect('value-changed', self.updateRefreshFrequency)
+        
+        vbox2.pack_start(slider, True, True, 0)
 
-        column_u = gtk.TreeViewColumn('Unknown')
-        column_n = gtk.TreeViewColumn('Nick')
+        button = gtk.Button()
+        button.set_label("Quit")
+        button.connect('button-press-event', self.cleanup_callback)
 
-        self.tree.append_column(column_w)
-        self.tree.append_column(column_u)
-        self.tree.append_column(column_n)
-
-        cell_w = gtk.CellRendererText()
-        cell_u = gtk.CellRendererText()
-        cell_n = gtk.CellRendererText()
-
-        column_w.pack_start(cell_w)
-        column_u.pack_start(cell_u)
-        column_n.pack_start(cell_n)
-
-        column_w.add_attribute(cell_w, 'text', 0)
-        column_u.add_attribute(cell_u, 'text', 1)
-        column_n.add_attribute(cell_n, 'text', 2)
-
-        sw = gtk.ScrolledWindow()
-        sw.add(self.tree)
-        vbox.add(sw)
+        vbox2.pack_start(button, False, False, 0)
+        hpaned.add2(vbox2)
 
         # Sensitivity control
-
-        self.show_all()
+        self.window.add(hpaned)
+        self.window.show_all()
 
     def onLoginSuccess(self):
 	print 'Zalogowano!'
@@ -237,9 +164,9 @@ class CameraWindow(gtk.Window):
 	reactor.connectTCP('212.244.48.54', 5008, camfactory)
     
     def onCamLoginSuccess(self):
-	self.updateLabel('Logged into OnetCams. Choose a nick and double click on it!')
-	print 'Zalogowano i mozemy pobierac pakiety z protokolu kamerek.'
-	#self.camconn.subscribeCamera('cora6')
+	self.updateLabel('Logged into OnetCams. Waiting for stream.')
+        self.camconn.subscribeCamera(self.nick)
+        self.camconn.startPing(self.nick)
     
     def onCamImgRecv(self, nick, data):
 	self.updateLabel('Receiving stream from %s' % (nick))
@@ -257,17 +184,27 @@ class CameraWindow(gtk.Window):
 
     def onUserList(self, data):
         pass
-        
+        #print data
+
     def onUserCountUpdate(self, data):
         data = data.split('\n')
-        self.liststore.clear()
         for user in data:
             try:
                 nick, watchers, unknown = user.split(' ')
-                self.liststore.append([int(watchers), int(unknown), str(nick)])
+                #print 'a:', user.split(' ')
+                #print nick
             except:
                 print 'Not possible for data: ', user
 
+    def updateRefreshFrequency(self, widget):
+
+        val = widget.get_value()
+
+        if self.camconn.__connection.loop:
+            self.camconn.__connection.loop.stop()
+            self.camconn.__connection.loop.start(val)
+        else:
+            print 'KeepAlive loop is not ready yet.'
 
     def nickClicked(self, treeview, iter, tvc, foo):
         model=treeview.get_model()
@@ -294,7 +231,7 @@ class CameraWindow(gtk.Window):
 	loader.close()
 	self.image.set_from_pixbuf(pixbuf)
 
-    def cleanup_callback(self, win):
+    def cleanup_callback(self, win, smth=None):
         if self.pixbuf_loader is not None:
             self.pixbuf_loader.close()
             self.pixbuf_loader = None
@@ -303,18 +240,18 @@ class CameraWindow(gtk.Window):
             self.image_stream.close()
             self.image_stream = None
 
-        self.camconn.stopPing(self.watched_nick)
-        self.camconn.unsubscribeCamera(self.watched_nick)
-        gtk.main_quit()
-	reactor.stop()
-        sys.exit(1)
+        try:
+            if self.nick != None:
+                self.camconn.stopPing(self.nick)
+                self.camconn.unsubscribeCamera(self.nick)
+            self.camconn.disconnect()
+        except:
+            self.camconn.disconnect()
+        self.window.destroy()
 
 
 def main():
-    auth = AuthDialog()
-    auth.getText()
-    #ImagesDemo()
-    #gtk.main()
+    InitialiseWebCamWindow('test')
     reactor.run()
 
 if __name__ == '__main__':
